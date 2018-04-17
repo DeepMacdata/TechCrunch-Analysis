@@ -1,0 +1,107 @@
+---
+title: "Tech Crun Analysis"
+author: "Sivaramakrishnan Sriram, Rajasekar Kamaraj"
+date: "28 March 2017"
+output: html_document
+---
+```{r}
+#loading the dataset
+crunch_data <-read.csv("techcrunch_posts.csv")
+```
+
+```{r}
+#data pre-processing
+crunch_data$content <- gsub("[^[:alnum:]///' .-]","",crunch_data$content)
+crunch_data$content <- gsub("â","",crunch_data$content)
+crunch_data$content <- gsub("?"," ",crunch_data$content)
+crunch_data$content <- gsub("?"," ",crunch_data$content)
+crunch_data$content <- gsub("?","",crunch_data$content)
+crunch_data$title <- gsub("[^[:alnum:]///' .-]"," ",crunch_data$title)
+crunch_data$title <- gsub("â","",crunch_data$title)
+crunch_data$authors <- strsplit(as.character(crunch_data$authors),",")
+crunch_data$tags<- strsplit(as.character(crunch_data$tags),",")
+crunch_data$tags <- as.character(crunch_data$tags)
+crunch_data$tags[crunch_data$tags == "character(0)"] = NA
+crunch_data$topics[crunch_data$topics == ""] = NA
+crunch_data$topics<- strsplit(as.character(crunch_data$topics),",")
+```
+
+```{r}
+library(tm)
+library(SnowballC)
+#Make a corpus object from a text vector
+dd <- Corpus(VectorSource(crunch_data$content)) 
+#Clean the text
+dd <- tm_map(dd, removePunctuation)
+dd <- tm_map(dd, removeNumbers)
+dd <- tm_map(dd, tolower)
+dd <- tm_map(dd, removeWords, stopwords("english"))
+dd <- tm_map(dd, stripWhitespace)
+dd <- tm_map(dd, stemDocument)
+#creating term matrix with TF-IDF weighting
+terms <-DocumentTermMatrix(dd,control = list(weighting = function(x) weightTfIdf(x, normalize = FALSE)))
+terms <-removeSparseTerms(terms,0.90) 
+```
+
+```{r}
+library(lsa)
+clean_data <- as.matrix(terms)
+#implementing the KNN model
+library(FNN)
+knn_fit <- get.knn(clean_data, k = 10 , algorithm = "brute")
+nearest_neighbours <- as.matrix(knn_fit$nn.index)
+```
+
+```{r}
+# Recommending the model to the user
+library(ggplot2)
+library(reshape2)
+recommend_user <- function(author)
+{
+indexes <- NULL
+j <- 1
+nearest <- NULL
+for (i in 1:length(crunch_data)) 
+{
+
+  if(crunch_data$authors[i] == author)
+  {
+    indexes[j] = i 
+    j <- j +1
+  }
+}
+
+return(indexes)
+}
+
+# Recommendations
+author <- "Matthew Lynley"
+indexes <- recommend_user(author)
+author_content <- as.data.frame(clean_data[indexes,])
+author_content <- rbind(author_content, colSums(author_content))
+author_content <- author_content[nrow(author_content),]
+author_content <- author_content[,which(!apply(author_content,2,FUN = function(x){all(x == 0)}))]
+temp <- data.frame(terms =colnames(author_content))
+temp1 <- data.frame(t(as.matrix(author_content[1,])))
+df <- cbind(temp,temp1[,1])
+names(df) <- c("term","freq")
+print("The frequency of words used by the author")
+ggplot(df, aes(x=term, y=freq)) + geom_bar(stat = "identity") + xlab("Terms") + ylab("Count") +coord_flip()
+nearest <-nearest_neighbours[indexes,]
+k <- 1
+b <- NULL
+for(i in 1:length(nearest))
+{
+if(crunch_data$authors[nearest[i]] != author)
+  b[k] <- nearest[i]
+k <- k+1
+}
+b <- b[!is.na(b)]
+print("the 10 nearest neighbors")
+print(b)
+b <- crunch_data$url[as.vector(b)]
+print("Top 5 recommendations for Matthew Lynley")
+print(b[1:5])
+
+```
+
